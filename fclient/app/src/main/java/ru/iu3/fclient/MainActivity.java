@@ -1,16 +1,41 @@
 package ru.iu3.fclient;
 
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.app.Activity;
+import android.content.Intent;
+
 import android.os.Bundle;
-import android.widget.TextView;
+import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 
-
+import org.apache.commons.codec.DecoderException;
+import org.apache.commons.codec.binary.Hex;
 import ru.iu3.fclient.databinding.ActivityMainBinding;
 
-public class MainActivity extends AppCompatActivity {
+
+
+public class MainActivity extends AppCompatActivity{
+
+    ActivityResultLauncher activityResultLauncher;
+
+    public static byte[] stringToHex(String s)
+    {
+        byte[] hex;
+        try {
+            hex = Hex.decodeHex(s.toCharArray());
+        }
+        catch (DecoderException ex) {
+            hex = null;
+        }
+        return hex;
+    }
 
     // Used to load the 'native-lib' library on application startup.
     static {
@@ -18,31 +43,57 @@ public class MainActivity extends AppCompatActivity {
         System.loadLibrary("mbedcrypto");
     }
 
-    private ActivityMainBinding binding;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        activityResultLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                new ActivityResultCallback<ActivityResult> () {
+                    @Override
+                    public void onActivityResult(ActivityResult result) {
+                        if (result.getResultCode() == Activity.RESULT_OK) {
+                            Intent data = result.getData();
+                            // обработка результата
+                            String pin = data.getStringExtra("pin");
+                            Toast.makeText(MainActivity.this, pin,
+                                    Toast.LENGTH_SHORT).show();
+                        } }
+                });
+
         // Example of a call to a native method
-        TextView tv = findViewById(R.id.sample_text);
-        tv.setText(stringFromJNI());
+//        TextView tv = findViewById(R.id.sample_text);
+//        tv.setText(stringFromJNI());
 
         int res = initRng();
-        byte[] rnd = randomBytes(10);
-        byte[] key = randomBytes(16);
-        byte[] data = randomBytes(200);
+//        byte[] rnd = randomBytes(10);
+//        byte[] key = randomBytes(16);
+//        byte[] data = randomBytes(200);
 
-        byte[] encdata = encrypt(key, data);
-        byte[] decdata = decrypt(key, encdata);
+//        byte[] encdata = encrypt(key, data);
+//        byte[] decdata = decrypt(key, encdata);
+//
+//        boolean equal = true;
+//        if (decdata.length != data.length) equal = false;
+//        for (int i = 0; i < decdata.length; i++) {
+//            if (data[i] != decdata[i]) equal = false;
+//        }
+//        System.out.print(equal);ы
+    }
 
-        boolean equal = true;
-        if (decdata.length != data.length) equal = false;
-        for (int i = 0; i < decdata.length; i++) {
-            if (data[i] != decdata[i]) equal = false;
-        }
-        System.out.print(equal);
+    public void onButtonClick(View v)
+    {
+        Intent it = new Intent(this, PinpadActivity.class);
+        activityResultLauncher.launch(it);
+
+//        Toast.makeText(this, "Hello",
+//               Toast.LENGTH_SHORT).show();
+//        byte[] key = stringToHex("0123456789ABCDEF0123456789ABCDE0");
+//        byte[] enc = encrypt(key, stringToHex("000000000000000102"));
+//        byte[] dec = decrypt(key, enc);
+//        String s = new String(Hex.encodeHex(dec)).toUpperCase();
+//        Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
     }
 
     /**
