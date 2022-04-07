@@ -11,6 +11,35 @@ mbedtls_entropy_context entropy;
 mbedtls_ctr_drbg_context ctr_drbg;
 char *personalization = "fclient-sample-app";
 
+JavaVM *gJvm = nullptr;
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *pJvm, void *reserved) {
+    gJvm = pJvm;
+    return JNI_VERSION_1_6;
+}
+
+JNIEnv *getEnv(bool &detach) {
+    JNIEnv *env = nullptr;
+    int status = gJvm->GetEnv((void **)&env, JNI_VERSION_1_6);
+    detach = false;
+    if (status == JNI_EDETACHED) {
+        status = gJvm->AttachCurrentThread(&env, nullptr);
+        if (status < 0) {
+            return nullptr;
+        }
+
+        detach = true;
+    }
+
+    return env;
+}
+
+void releaseEnv(bool detach, JNIEnv* env) {
+    if (detach && (gJvm != nullptr)) {
+        gJvm->DetachCurrentThread();
+    }
+}
+
 #define LOG_INFO(...) __android_log_print(ANDROID_LOG_INFO, "fclient_ndk", __VA_ARGS__)
 #define SLOG_INFO(...) android_logger->info( __VA_ARGS__ )
 auto android_logger = spdlog::android_logger_mt("android", "fclient_ndk");
@@ -81,8 +110,7 @@ Java_ru_iu3_fclient_MainActivity_encrypt(JNIEnv *env,
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_ru_iu3_fclient_MainActivity_decrypt(JNIEnv *env,
-                                         jclass, jbyteArray key, jbyteArray data)
-{
+                                         jclass, jbyteArray key, jbyteArray data) {
     jsize ksz = env->GetArrayLength(key);
     jsize dsz = env->GetArrayLength(data);
     if ((ksz != 16) || (dsz <= 0) || ((dsz % 8) != 0)) {
@@ -91,24 +119,81 @@ Java_ru_iu3_fclient_MainActivity_decrypt(JNIEnv *env,
     mbedtls_des3_context ctx;
     mbedtls_des3_init(&ctx);
 
-    jbyte * pkey = env->GetByteArrayElements(key, 0);
+    jbyte *pkey = env->GetByteArrayElements(key, 0);
 
-    uint8_t * buf = new uint8_t[dsz];
+    uint8_t *buf = new uint8_t[dsz];
 
-    jbyte * pdata = env->GetByteArrayElements(data, 0);
+    jbyte *pdata = env->GetByteArrayElements(data, 0);
     std::copy(pdata, pdata + dsz, buf);
-    mbedtls_des3_set2key_dec(&ctx, (uint8_t *)pkey);
+    mbedtls_des3_set2key_dec(&ctx, (uint8_t *) pkey);
     int cn = dsz / 8;
     for (int i = 0; i < cn; i++)
-        mbedtls_des3_crypt_ecb(&ctx, buf + i*8, buf +i*8);
+        mbedtls_des3_crypt_ecb(&ctx, buf + i * 8, buf + i * 8);
 
     //PKCS#5. упрощено. по соображениям безопасности надо проверить каждый байт паддинга
-    int sz = dsz - 8 + buf[dsz-1];
+    int sz = dsz - 8 + buf[dsz - 1];
 
     jbyteArray dout = env->NewByteArray(sz);
-    env->SetByteArrayRegion(dout, 0, sz, (jbyte *)buf);
+    env->SetByteArrayRegion(dout, 0, sz, (jbyte *) buf);
     delete[] buf;
     env->ReleaseByteArrayElements(key, pkey, 0);
     env->ReleaseByteArrayElements(data, pdata, 0);
     return dout;
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_ru_iu3_fclient_MainActivity_transaction(JNIEnv *xenv, jobject xthiz, jbyteArray xtrd) {
+    jobject thiz = xenv->NewGlobalRef(xthiz);
+    jbyteArray trd = (jbyteArray)xenv->NewGlobalRef(xtrd);
+
+    std::thread t([thiz, trd] {
+        bool detach = false;
+        JNIEnv *env = getEnv(detach);
+        jclass cls = env->GetObjectClass(thiz);
+        jmethodID id = env->GetMethodID(cls, "enterPin", "(ILjava/lang/String;)Ljava/lang/String;");
+
+        uint8_t *p = (uint8_t*)env->GetByteArrayElements(trd, 0);
+        jsize sz = env->GetArrayLength(trd);
+
+        if ((sz != 9) || (p[0] != 0x9F) || (p[1] != 0x02) || (p[2] != 0x06)) {
+            return false;
+        }
+
+        char buffer[13];
+        for (int i = 0; i < 6; ++i) {
+            uint8_t n = *(p + 3 + i);
+            buffer[i * 2] = ((n & 0xF0) >> 4) + '0';
+            buffer[i * 2 + 1] = (n & 0x0F) + '0';
+        }
+
+        buffer[12] = 0x00;
+        jstring amount = (jstring) env->NewStringUTF(buffer);
+        int ptc = 3;
+        while (ptc > 0) {
+            jstring pin = (jstring) env->CallObjectMethod(thiz, id, ptc, amount);
+            const char *utf = env->GetStringUTFChars(pin, nullptr);
+
+            env->ReleaseStringUTFChars(pin, utf);
+            if ((utf != nullptr) && (strcmp(utf, "1234") == 0)) {
+                break;
+            }
+
+            ptc--;
+        }
+
+        env->ReleaseByteArrayElements(trd, (jbyte *)p, 0);
+
+        id = env->GetMethodID(cls, "transactionResult", "(Z)V");
+        env->CallVoidMethod(thiz, id, ptc > 0);
+
+        env->DeleteGlobalRef(thiz);
+        env->DeleteGlobalRef(trd);
+
+        releaseEnv(detach, env);
+        return true;
+    });
+
+    t.detach();
+    return true;
 }
