@@ -7,23 +7,44 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import org.springframework.web.server.ResponseStatusException;
+import ru.iu3.backend.models.Artists;
 import ru.iu3.backend.models.Country;
 import ru.iu3.backend.repositories.CountryRepository;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
+
+/**
+ * Класс-контроллер таблицы "стран"
+ */
 @RestController
 @RequestMapping("api/v1")
 public class CountryController {
+    // Получаем ссылку на репозиторий
     @Autowired
     CountryRepository countryRepository;
 
+    /**
+     * Метод, который возвращает просто список стран
+     * @return - Список стран, которые есть в ьазе данных
+     */
     @GetMapping("/countries")
     public List getAllCountries() {
         return countryRepository.findAll();
+    }
+
+    /**
+     * Метод, который извлекает информацию из таблицы country, вместе с информацией по конкретному artists
+     * @param countryID - ID страны
+     * @return - Возвращает artists
+     */
+    @GetMapping("/countries/{id}/artists")
+    public ResponseEntity<List<Artists>> getCountryArtists(@PathVariable(value = "id") Long countryID) {
+        Optional<Country> cc = countryRepository.findById(countryID);
+        if (cc.isPresent()) {
+            return ResponseEntity.ok(cc.get().artists);
+        }
+        return ResponseEntity.ok(new ArrayList<Artists>());
     }
 
     /**
@@ -70,7 +91,6 @@ public class CountryController {
         if (cc.isPresent()) {
             country = cc.get();
             country.name = countryDetails.name;
-
             countryRepository.save(country);
             return ResponseEntity.ok(country);
         } else {
@@ -95,7 +115,6 @@ public class CountryController {
         } else {
             resp.put("deleted", Boolean.FALSE);
         }
-
         return ResponseEntity.ok(resp);
     }
 }
