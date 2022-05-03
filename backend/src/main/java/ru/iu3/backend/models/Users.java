@@ -39,7 +39,6 @@ public class Users {
     public String salt;
 
     // Поле - токен
-//    @JsonIgnore
     @Column(name = "token")
     public String token;
 
