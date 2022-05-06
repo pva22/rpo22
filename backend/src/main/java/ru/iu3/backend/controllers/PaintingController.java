@@ -18,6 +18,7 @@ import java.util.*;
 /**
  * Класс - контроллер картин
  */
+@CrossOrigin(origins = "http://localhost:3000")
 @RestController
 @RequestMapping("api/v1")
 public class PaintingController {

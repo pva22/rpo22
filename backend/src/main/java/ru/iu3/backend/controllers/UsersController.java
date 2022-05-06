@@ -15,8 +15,9 @@ import java.util.*;
 
 /**
  * Класс - контроллер пользователя
- * @author artem
+ * @author
  */
+@CrossOrigin(origins = "http://localhost:3000")
 @RestController
 @RequestMapping("api/v1")
 public class UsersController {
@@ -28,7 +29,7 @@ public class UsersController {
     MuseumRepository museumRepository;
 
     /**
-     * Метод, который возвращает список юзеров (не артистов), которые есть в данной БД
+     * Метод, который возвращает список юзеров (не художников), которые есть в данной БД
      * @return - список пользователей в виде JSON
      */
     @GetMapping("/users")

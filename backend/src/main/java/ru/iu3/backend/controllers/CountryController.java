@@ -4,19 +4,21 @@ package ru.iu3.backend.controllers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import org.springframework.web.server.ResponseStatusException;
 import ru.iu3.backend.models.Artists;
 import ru.iu3.backend.models.Country;
 import ru.iu3.backend.repositories.CountryRepository;
+import ru.iu3.backend.tools.DataValidationException;
 
 import java.util.*;
-
 
 /**
  * Класс-контроллер таблицы "стран"
  */
+@CrossOrigin(origins = "http://localhost:3000")
 @RestController
 @RequestMapping("api/v1")
 public class CountryController {
@@ -26,12 +28,13 @@ public class CountryController {
 
     /**
      * Метод, который возвращает просто список стран
-     * @return - Список стран, которые есть в ьазе данных
+     * @return - Список стран, которые есть в базе данных
      */
     @GetMapping("/countries")
     public List getAllCountries() {
         return countryRepository.findAll();
     }
+
 
     /**
      * Метод, который извлекает информацию из таблицы country, вместе с информацией по конкретному artists
@@ -47,6 +50,15 @@ public class CountryController {
         return ResponseEntity.ok(new ArrayList<Artists>());
     }
 
+    @GetMapping("/countries/{id}")
+    public ResponseEntity<Country> getCountry(@PathVariable(value = "id") Long countryId)
+            throws DataValidationException {
+        Country country = countryRepository.findById(countryId).
+                orElseThrow(() -> new DataValidationException("Not founding"));
+
+        return ResponseEntity.ok(country);
+    }
+
     /**
      * Метод, который добавляет country в таблиц
      * RequestBody - это наш экземпляр (через curl передаётся в виде JSON)
@@ -55,7 +67,7 @@ public class CountryController {
      */
     @PostMapping("/countries")
     public ResponseEntity<Object> createCountry(@RequestBody Country country)
-            throws Exception {
+            throws DataValidationException {
         try {
             // Попытка сохранить что-либо в базу данных
             Country newCountry = countryRepository.save(country);
@@ -63,16 +75,11 @@ public class CountryController {
         } catch (Exception exception) {
             // Указываем тип ошибки
             String error;
-            if (exception.getMessage().contains("ConstraintViolationException")) {
-                error = "countryAlreadyExists";
+            if (exception.getMessage().contains("countries.name_UNIQUE")) {
+                throw new DataValidationException("Эта страна уже есть в базе");
             } else {
-                error = exception.getMessage();
+                throw new DataValidationException("Неизвестная ошибка");
             }
-
-            Map<String, String> map = new HashMap<>();
-            map.put("error", error);
-
-            return ResponseEntity.ok(map);
         }
     }
 
@@ -84,18 +91,29 @@ public class CountryController {
      */
     @PutMapping("/countries/{id}")
     public ResponseEntity<Country> updateCountry(@PathVariable(value = "id") Long countryID,
-                                                 @RequestBody Country countryDetails) {
-        Country country = null;
-        Optional<Country> cc = countryRepository.findById(countryID);
-
-        if (cc.isPresent()) {
-            country = cc.get();
+                                                 @Validated @RequestBody Country countryDetails) throws DataValidationException {
+        try {
+            Country country = countryRepository.findById(countryID).
+                    orElseThrow(() -> new DataValidationException("Страна с таким индексом не найдена"));
             country.name = countryDetails.name;
             countryRepository.save(country);
             return ResponseEntity.ok(country);
-        } else {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "country not found");
+        } catch (Exception exception) {
+            if (exception.getMessage().contains("ConstraintViolationException")) {
+                throw new DataValidationException("Эта страна уже есть в базе");
+                //throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Эта страна уже есть в базе");
+            } else {
+                //throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Неизвестная ошибка");
+                throw new DataValidationException("Неизвестная ошибка");
+            }
         }
+    }
+
+    // Удалять через пользовательский интерфейс проще, чем по одному
+    @PostMapping("/deletecountries")
+    public ResponseEntity deleteCountries(@Validated @RequestBody List<Country> countries) {
+        countryRepository.deleteAll(countries);
+        return new ResponseEntity(HttpStatus.OK);
     }
 
     /**
